@@ -6,8 +6,8 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 
 	class WPFuse_GitHub_Updater {
 		
-		const CACHE_TTL = 21600; // 6 horas
-		const ERROR_TTL = 1800;  // 30 minutos
+		const CACHE_TTL = 21600; // 6 hours
+		const ERROR_TTL = 1800;  // 30 minutes
 		
 		protected $plugin_file;
 		protected $plugin_slug;
@@ -24,11 +24,6 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 			$this->cache_key   = $this->plugin_slug . '_upd';
 			$this->github_token = $github_token;
 			
-			// Se o token não for passado no construtor, tenta pegar de uma constante global do wp-config.php
-			if ( empty( $this->github_token ) && defined( 'GITHUB_UPDATER_TOKEN' ) ) {
-				$this->github_token = GITHUB_UPDATER_TOKEN;
-			}
-			
 			// Load plugin data natively and lightly without relying on wp-admin functions
 			$this->plugin_data = get_file_data( $plugin_file, array(
 				'Version'     => 'Version',
@@ -40,7 +35,7 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 				'GitHubURI'   => 'GitHub Plugin URI',
 			), 'plugin' );
 			
-			// Obtém o repositório exclusivamente pelo cabeçalho do plugin principal
+			// Get the repository slug exclusively from the main plugin header
 			if ( ! empty( $this->plugin_data['GitHubURI'] ) ) {
 				$repo = str_replace( array( 'https://github.com/', 'http://github.com/' ), '', $this->plugin_data['GitHubURI'] );
 				$this->github_repo = trim( $repo, '/' );
@@ -51,14 +46,14 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 			add_action( 'upgrader_process_complete', array( $this, 'purge' ), 10, 2 );
 			add_filter( 'upgrader_source_selection', array( $this, 'rename_github_dir' ), 10, 4 );
 			
-			// Se tiver token, injeta na requisição nativa de download do WordPress (passa o token pro pacote zip privado)
+			// If token is provided, inject it into the native WordPress download request (for private zip packages)
 			if ( ! empty( $this->github_token ) ) {
 				add_filter( 'http_request_args', array( $this, 'inject_github_token' ), 10, 2 );
 			}
 		}
 		
 		public function inject_github_token( $parsed_args, $url ) {
-			// Injeta o cabeçalho Bearer somente se a requisição for pro nosso repo do Github 
+			// Inject Bearer header only if the request is for our GitHub repository 
 			if ( strpos( $url, 'api.github.com/repos/' . $this->github_repo ) !== false ) {
 				$parsed_args['headers']['Authorization'] = 'Bearer ' . $this->github_token;
 			}
@@ -83,7 +78,7 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 			$new_source = trailingslashit( $remote_source ) . $this->plugin_slug . '/';
 			
 			if ( ! $wp_filesystem->move( $source, $new_source ) ) {
-				return new WP_Error( 'rename_failed', 'Não foi possível renomear a pasta do plugin baixado do GitHub.' );
+				return new WP_Error( 'rename_failed', 'Could not rename the plugin folder downloaded from GitHub.' );
 			}
 			
 			return $new_source;
@@ -139,7 +134,7 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 				$remote->name           = $this->plugin_data['Name'];
 				$remote->slug           = $this->plugin_slug;
 				$remote->version        = ltrim( $github_data->tag_name, 'v' );
-				$remote->tested         = ''; // Pode ficar vazio
+				$remote->tested         = ''; // Can be left empty
 				$remote->requires       = $this->plugin_data['RequiresWP'];
 				$remote->requires_php   = $this->plugin_data['RequiresPHP'];
 				$remote->author         = $this->plugin_data['Author'];
@@ -148,7 +143,7 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 				$remote->last_updated   = $github_data->published_at;
 				
 				$remote->sections = new stdClass();
-				$remote->sections->description = 'Atualização do plugin ' . $this->plugin_data['Name'];
+				$remote->sections->description = 'Plugin update: ' . $this->plugin_data['Name'];
 				$remote->sections->changelog = nl2br( $github_data->body );
 				
 				set_transient( $this->cache_key, $remote, self::CACHE_TTL );
