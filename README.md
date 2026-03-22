@@ -51,7 +51,7 @@ Define the token globally in your WordPress `wp-config.php` file:
 define( 'GITHUB_UPDATER_TOKEN', 'github_pat_11AXYZ...' );
 ```
 
-*Note: If you use exactly the same [updater.php](file:///Users/daniel/Development/wpfuse/postrider/inc/updater.php) class across multiple WPFuse plugins on the same server, they will all share this global token automatically. Ensure the token has read access to all required private repositories.*
+*Note: If you use exactly the same [updater.php](file:///Users/daniel/Development/wpfuse/postrider/inc/updater.php) class across multiple plugins on the same server, they will all share this global token automatically. Ensure the token has read access to all required private repositories.*
 
 ## How it works
 
