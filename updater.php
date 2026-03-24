@@ -20,8 +20,6 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 		public function __construct( $plugin_file, $github_token = '' ) {
 			
 			$this->plugin_file = $plugin_file;
-			$this->plugin_slug = basename( dirname( $plugin_file ) );
-			$this->cache_key   = $this->plugin_slug . '_upd';
 			$this->github_token = $github_token;
 			
 			// Load plugin data natively and lightly without relying on wp-admin functions
@@ -39,17 +37,41 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 			if ( ! empty( $this->plugin_data['GitHubURI'] ) ) {
 				$repo = str_replace( array( 'https://github.com/', 'http://github.com/' ), '', $this->plugin_data['GitHubURI'] );
 				$this->github_repo = trim( $repo, '/' );
+				$this->plugin_slug = basename( $this->github_repo );
+			} else {
+				$this->plugin_slug = basename( dirname( $plugin_file ) ); // backward compatibility
 			}
+			
+			$this->cache_key = $this->plugin_slug . '_upd';
 			
 			add_filter( 'plugins_api', array( $this, 'info' ), 20, 3 );
 			add_filter( 'site_transient_update_plugins', array( $this, 'update' ) );
-			add_action( 'deleted_site_transient', array( $this, 'clear_cache' ) );
+			add_action( 'delete_site_transient_update_plugins', array( $this, 'clear_cache' ) );
+			add_action( 'admin_init', array( $this, 'maybe_handle_force_check' ) );
 			add_action( 'upgrader_process_complete', array( $this, 'purge' ), 10, 2 );
 			add_filter( 'upgrader_source_selection', array( $this, 'rename_github_dir' ), 10, 4 );
 			
 			// If token is provided, inject it into the native WordPress download request (for private zip packages)
 			if ( ! empty( $this->github_token ) ) {
 				add_filter( 'http_request_args', array( $this, 'inject_github_token' ), 10, 2 );
+			}
+		}
+		
+		public function maybe_handle_force_check() {
+			if ( ! is_admin() || ! current_user_can( 'update_plugins' ) ) {
+				return;
+			}
+			if ( empty( $_GET['force-check'] ) || '1' !== (string) $_GET['force-check'] ) {
+				return;
+			}
+			
+			global $pagenow;
+			$allowed = array( 'update-core.php', 'plugins.php' );
+			
+			if ( in_array( $pagenow, $allowed, true ) ) {
+				error_log( '[GitHub Updater] Force check triggered. Cleared transient: ' . $this->cache_key );
+				delete_transient( $this->cache_key );
+				$this->memory_cache = null;
 			}
 		}
 		
@@ -73,12 +95,14 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 			}
 			
 			if ( ! is_object( $wp_filesystem ) ) {
+				error_log( '[GitHub Updater] Error: WP_Filesystem class is not available.' );
 				return $source;
 			}
 			
 			$new_source = trailingslashit( $remote_source ) . $this->plugin_slug . '/';
 			
 			if ( ! $wp_filesystem->move( $source, $new_source ) ) {
+				error_log( sprintf( '[GitHub Updater] Critical failure: WP_Filesystem could not move %s to %s', $source, $new_source ) );
 				return new WP_Error( 'rename_failed', 'Could not rename the plugin folder downloaded from GitHub.' );
 			}
 			
@@ -117,6 +141,7 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 				$response = wp_remote_get( $url, $args );
 				
 				if( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
+					error_log( sprintf( '[GitHub Updater] Error fetching data from GitHub. URL: %s, Code: %s, Error: %s', $url, wp_remote_retrieve_response_code( $response ), is_wp_error( $response ) ? $response->get_error_message() : 'Invalid response' ) );
 					set_transient( $this->cache_key, 'error', self::ERROR_TTL );
 					$this->memory_cache = 'error';
 					return false;
@@ -125,6 +150,7 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 				$github_data = json_decode( wp_remote_retrieve_body( $response ) );
 				
 				if( empty( $github_data ) || empty( $github_data->tag_name ) ) {
+					error_log( '[GitHub Updater] Error: GitHub data is empty or missing tag_name.' );
 					set_transient( $this->cache_key, 'error', self::ERROR_TTL );
 					$this->memory_cache = 'error';
 					return false;
@@ -229,10 +255,8 @@ if( ! class_exists( 'WPFuse_GitHub_Updater' ) ) {
 			}
 		}
 		
-		public function clear_cache( $transient ) {
-			if ( 'update_plugins' === $transient ) {
-				delete_transient( $this->cache_key );
-			}
+		public function clear_cache( $transient = '' ) {
+			delete_transient( $this->cache_key );
 		}
 	}
 }
